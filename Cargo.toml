@@ -1,0 +1,12 @@
+[package]
+authors = ["Michael Nesibtt <michael.nesbitt111@gmail.com>"]
+edition = "2018"
+name = "ponyboy_bot"
+version = "0.1.0"
+
+[dependencies]
+regex = "1.10.2"
+serde = "1.0.195"
+serenity = {version = "0.12.0", default-features = false, features = ["client", "gateway", "rustls_backend", "model"]}
+tokio = {version = "1.35.1", features = ["macros", "rt-multi-thread"]}
+toml = "0.8.8"
