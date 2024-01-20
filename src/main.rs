@@ -35,8 +35,20 @@ impl EventHandler for Handler {
                         "emote" => {
                             let emotes = keyword_action.emotes.as_ref().unwrap();
                             for emote in emotes {
-                                if let Err(why) = msg.channel_id.say(&ctx.http, emote).await {
-                                    println!("Error sending message: {why:?}");
+                                if emote.chars().count() > 1 {
+                                    let emoji_id =
+                                        serenity::all::EmojiId::new(emote.parse::<u64>().unwrap());
+                                    let emoji =
+                                        msg.guild_id.unwrap().emoji(&ctx, emoji_id).await.unwrap();
+                                    if let Err(why) = msg.react(&ctx, emoji).await {
+                                        println!("Error sending message: {why:?}");
+                                    }
+                                } else {
+                                    if let Err(why) =
+                                        msg.react(&ctx, emote.chars().next().unwrap()).await
+                                    {
+                                        println!("Error sending message: {why:?}");
+                                    }
                                 }
                             }
                             println!("{}: {:#?}", keyword_action.name.as_ref().unwrap(), emotes);
