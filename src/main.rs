@@ -1,7 +1,9 @@
 use std::env;
+use std::path::Path;
 
 use regex::Regex;
 use serenity::async_trait;
+use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -10,6 +12,7 @@ mod keyword_action;
 
 struct Handler {
     pub(crate) keyword_actions: Vec<keyword_action::KeywordAction>,
+    pub(crate) file_base_dir: String,
 }
 
 #[async_trait]
@@ -20,55 +23,95 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple events can be dispatched
     // simultaneously.
     async fn message(&self, ctx: Context, msg: Message) {
-        for keyword_action in &self.keyword_actions {
-            let regex_keyword_group = keyword_action
-                .keywords
-                .as_ref()
-                .unwrap()
-                .join(r"( |[\?\.',]|$)|(^| )");
-            let re =
-                Regex::new(format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)").as_str()).unwrap();
-            if re.is_match(msg.content.as_str()) {
-                let actions = keyword_action.actions.as_ref().unwrap();
-                for action in actions {
-                    match action.as_str() {
-                        "emote" => {
-                            let emotes = keyword_action.emotes.as_ref().unwrap();
-                            for emote in emotes {
-                                if emote.chars().count() > 1 {
-                                    let emoji_id =
-                                        serenity::all::EmojiId::new(emote.parse::<u64>().unwrap());
-                                    let emoji =
-                                        msg.guild_id.unwrap().emoji(&ctx, emoji_id).await.unwrap();
-                                    if let Err(why) = msg.react(&ctx, emoji).await {
-                                        println!("Error sending message: {why:?}");
-                                    }
-                                } else {
-                                    if let Err(why) =
-                                        msg.react(&ctx, emote.chars().next().unwrap()).await
-                                    {
-                                        println!("Error sending message: {why:?}");
+        if msg.author.id != ctx.cache.current_user().id {
+            for keyword_action in &self.keyword_actions {
+                let regex_keyword_group = keyword_action
+                    .keywords
+                    .as_ref()
+                    .unwrap()
+                    .join(r"( |[\?\.',]|$)|(^| )");
+                let re = Regex::new(format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)").as_str())
+                    .unwrap();
+                if re.is_match(msg.content.as_str()) {
+                    let actions = keyword_action.actions.as_ref().unwrap();
+                    for action in actions {
+                        match action.as_str() {
+                            "emote" => {
+                                let emotes = keyword_action.emotes.as_ref().unwrap();
+                                for emote in emotes {
+                                    if emote.chars().count() > 1 {
+                                        let emoji_id = serenity::all::EmojiId::new(
+                                            emote.parse::<u64>().unwrap(),
+                                        );
+                                        let emoji = msg
+                                            .guild_id
+                                            .unwrap()
+                                            .emoji(&ctx, emoji_id)
+                                            .await
+                                            .unwrap();
+                                        if let Err(why) = msg.react(&ctx, emoji).await {
+                                            println!("Error sending message: {why:?}");
+                                        }
+                                    } else {
+                                        if let Err(why) =
+                                            msg.react(&ctx, emote.chars().next().unwrap()).await
+                                        {
+                                            println!("Error sending message: {why:?}");
+                                        }
                                     }
                                 }
+                                println!(
+                                    "{}: {} - {:#?}",
+                                    keyword_action.name.as_ref().unwrap(),
+                                    action,
+                                    emotes
+                                );
                             }
-                            println!("{}: {:#?}", keyword_action.name.as_ref().unwrap(), emotes);
-                        }
-                        "message" => {
-                            let message = keyword_action.message.as_ref().unwrap();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message).await {
-                                println!("Error sending message: {why:?}");
+                            "message" => {
+                                let message = keyword_action.message.as_ref().unwrap();
+                                if let Err(why) = msg.channel_id.say(&ctx.http, message).await {
+                                    println!("Error sending message: {why:?}");
+                                }
+                                println!(
+                                    "{}: {} - {}",
+                                    keyword_action.name.as_ref().unwrap(),
+                                    action,
+                                    message
+                                );
                             }
-                            println!("{}: {}", keyword_action.name.as_ref().unwrap(), message);
-                        }
-                        "file_embed" => {
-                            let message = keyword_action.message.as_ref().unwrap();
-                            if let Err(why) = msg.channel_id.say(&ctx.http, message).await {
-                                println!("Error sending message: {why:?}");
+                            "file_embed" => {
+                                let file = keyword_action.file.as_ref().unwrap();
+                                let paths = [CreateAttachment::path(
+                                    Path::new(&self.file_base_dir).join(file),
+                                )
+                                .await
+                                .unwrap()];
+
+                                let builder = CreateMessage::new();
+                                let message: String;
+                                match keyword_action.message.as_ref() {
+                                    Some(config_message) => {
+                                        message = config_message.clone();
+                                    }
+                                    None => {
+                                        message = file.clone();
+                                    }
+                                }
+                                if let Err(why) =
+                                    msg.channel_id.send_files(&ctx.http, paths, builder).await
+                                {
+                                    println!("Error sending message: {why:?}");
+                                }
+                                println!(
+                                    "{}: {} - {}",
+                                    keyword_action.name.as_ref().unwrap(),
+                                    action,
+                                    message
+                                );
                             }
-                            println!("{}: {}", keyword_action.name.as_ref().unwrap(), message);
-                        }
-                        _ => {
-                            println!("Unknown action: {}", action);
+                            _ => {
+                                println!("Unknown action: {}", action);
+                            }
                         }
                     }
                 }
@@ -96,11 +139,14 @@ async fn main() {
         | GatewayIntents::MESSAGE_CONTENT;
 
     let keyword_actions = keyword_action::load_keyword_actions();
+    let file_base_dir =
+        env::var("FILE_BASE_DIR").expect("Expected file base dir to be set in the environment");
 
     // Create a new instance of the Client, logging in as a bot. This will automatically prepend
     // your bot token with "Bot ", which is a requirement by Discord for bot users.
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler {
+            file_base_dir: file_base_dir,
             keyword_actions: keyword_actions,
         })
         .await
