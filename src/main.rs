@@ -2,6 +2,7 @@ use std::env;
 use std::path::Path;
 
 use regex::Regex;
+use serenity::all::UserId;
 use serenity::async_trait;
 use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
@@ -25,6 +26,19 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         if msg.author.id != ctx.cache.current_user().id {
             for keyword_action in &self.keyword_actions {
+                let mut message_matches_action = false;
+
+                // Check if a specific user is mentioned in the message
+                let triggers = keyword_action.triggers.as_ref().unwrap();
+                if triggers.contains(&"mention".to_string()) {
+                    let mentioned_user = keyword_action.mentioned_user.as_ref().unwrap();
+                    let user_id = UserId::new(*mentioned_user);
+                    if msg.mentions_user_id(user_id) {
+                        message_matches_action = true;
+                    }
+                }
+
+                // Check if a keyword is used in the message
                 let regex_keyword_group = keyword_action
                     .keywords
                     .as_ref()
@@ -33,6 +47,9 @@ impl EventHandler for Handler {
                 let re = Regex::new(format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)").as_str())
                     .unwrap();
                 if re.is_match(msg.content.as_str()) {
+                    message_matches_action = true;
+                }
+                if message_matches_action {
                     let actions = keyword_action.actions.as_ref().unwrap();
                     for action in actions {
                         match action.as_str() {

@@ -16,6 +16,8 @@ pub(crate) struct KeywordAction {
     pub(crate) name: Option<String>,
     pub(crate) message: Option<String>,
     pub(crate) file: Option<String>,
+    pub(crate) triggers: Option<Vec<String>>,
+    pub(crate) mentioned_user: Option<u64>,
 }
 
 pub(crate) fn load_keyword_actions() -> Vec<KeywordAction> {
