@@ -143,6 +143,24 @@ impl EventHandler for Handler {
                             );
                         }
                     }
+                    if let Some(message) = random_action.mention.as_ref() {
+                        let mentioned_user = incoming_message.author.mention();
+                        let formatted_messaage =
+                            message.replace("@mention", format!("{}", mentioned_user).as_str());
+                        if let Err(why) = incoming_message
+                            .channel_id
+                            .say(&ctx.http, formatted_messaage)
+                            .await
+                        {
+                            println!("Error sending message: {why:?}");
+                        }
+                        println!(
+                            "{}: {} - {}",
+                            keyword_action.name.as_ref().unwrap(),
+                            "message",
+                            message
+                        );
+                    }
                 }
             }
         }

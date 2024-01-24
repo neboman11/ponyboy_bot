@@ -21,6 +21,7 @@ pub(crate) struct KeywordAction {
 pub(crate) struct Action {
     pub(crate) emotes: Option<Vec<String>>,
     pub(crate) file: Option<String>,
+    pub(crate) mention: Option<String>,
     pub(crate) message: Option<String>,
 }
 
