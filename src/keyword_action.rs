@@ -26,6 +26,5 @@ pub(crate) fn load_keyword_actions() -> Vec<KeywordAction> {
         .and_then(|mut f| f.read_to_string(&mut input))
         .unwrap();
     let decoded: Config = toml::from_str(&input).unwrap();
-    println!("{:#?}", decoded);
     return decoded.keyword_actions.unwrap();
 }

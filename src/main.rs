@@ -9,6 +9,9 @@ use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 
+use warp::Filter;
+
+mod api;
 mod keyword_action;
 
 struct Handler {
@@ -104,15 +107,22 @@ impl EventHandler for Handler {
                                 .await
                                 .unwrap()];
 
-                                let builder = CreateMessage::new();
+                                let builder;
                                 let message: String;
+                                let mut add_message = false;
                                 match keyword_action.message.as_ref() {
                                     Some(config_message) => {
                                         message = config_message.clone();
+                                        add_message = true;
                                     }
                                     None => {
                                         message = file.clone();
                                     }
+                                }
+                                if add_message {
+                                    builder = CreateMessage::new().content(&message);
+                                } else {
+                                    builder = CreateMessage::new();
                                 }
                                 if let Err(why) =
                                     msg.channel_id.send_files(&ctx.http, paths, builder).await
@@ -149,7 +159,7 @@ impl EventHandler for Handler {
 #[tokio::main]
 async fn main() {
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let discord_token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -161,7 +171,7 @@ async fn main() {
 
     // Create a new instance of the Client, logging in as a bot. This will automatically prepend
     // your bot token with "Bot ", which is a requirement by Discord for bot users.
-    let mut client = Client::builder(&token, intents)
+    let mut discord_client = Client::builder(&discord_token, intents)
         .event_handler(Handler {
             file_base_dir: file_base_dir,
             keyword_actions: keyword_actions,
@@ -173,7 +183,23 @@ async fn main() {
     //
     // Shards will automatically attempt to reconnect, and will perform exponential backoff until
     // it reconnects.
-    if let Err(why) = client.start().await {
-        println!("Client error: {why:?}");
-    }
+    let discord_bot = async move {
+        if let Err(why) = discord_client.start().await {
+            println!("Client error: {why:?}");
+        }
+    };
+
+    let rest_route = warp::post()
+        .and(warp::path("send_discord_message"))
+        .and(warp::body::json())
+        .and_then({
+            move |body: api::SendDiscordMessageRequest| {
+                // handle the message
+                api::send_discord_message(discord_token.clone(), body)
+            }
+        });
+    let rest_server = warp::serve(rest_route).run(([127, 0, 0, 1], 8081));
+
+    // Running both the REST server and the Discord bot concurrently
+    futures::join!(rest_server, discord_bot);
 }
