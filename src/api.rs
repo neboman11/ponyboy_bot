@@ -1,9 +1,10 @@
 use std::convert::Infallible;
 
 use serde::{Deserialize, Serialize};
+use warp::Filter;
 
 #[derive(Deserialize, Debug)]
-pub(crate) struct SendDiscordMessageRequest {
+struct SendDiscordMessageRequest {
     pub(crate) user_id: u64,
     pub(crate) message: String,
 }
@@ -23,7 +24,20 @@ struct SendDiscordMessageResponse {
     pub(crate) id: String,
 }
 
-pub(crate) async fn send_discord_message(
+pub(crate) async fn start_api_server(discord_token: String) {
+    let rest_route = warp::post()
+        .and(warp::path("send_discord_message"))
+        .and(warp::body::json())
+        .and_then({
+            move |body: SendDiscordMessageRequest| {
+                // handle the message
+                send_discord_message(discord_token.clone(), body)
+            }
+        });
+    warp::serve(rest_route).run(([127, 0, 0, 1], 8081)).await;
+}
+
+async fn send_discord_message(
     discord_token: String,
     body: SendDiscordMessageRequest,
 ) -> Result<impl warp::Reply, Infallible> {

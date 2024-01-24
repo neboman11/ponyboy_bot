@@ -9,8 +9,6 @@ use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 
-use warp::Filter;
-
 mod api;
 mod keyword_action;
 
@@ -189,16 +187,7 @@ async fn main() {
         }
     };
 
-    let rest_route = warp::post()
-        .and(warp::path("send_discord_message"))
-        .and(warp::body::json())
-        .and_then({
-            move |body: api::SendDiscordMessageRequest| {
-                // handle the message
-                api::send_discord_message(discord_token.clone(), body)
-            }
-        });
-    let rest_server = warp::serve(rest_route).run(([127, 0, 0, 1], 8081));
+    let rest_server = api::start_api_server(discord_token);
 
     // Running both the REST server and the Discord bot concurrently
     futures::join!(rest_server, discord_bot);
