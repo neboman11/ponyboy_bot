@@ -19,7 +19,6 @@ pub(crate) struct KeywordAction {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Action {
-    pub(crate) action: Option<String>,
     pub(crate) emotes: Option<Vec<String>>,
     pub(crate) file: Option<String>,
     pub(crate) message: Option<String>,
