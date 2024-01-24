@@ -11,13 +11,18 @@ pub(crate) struct Config {
 #[derive(Debug, Deserialize)]
 pub(crate) struct KeywordAction {
     pub(crate) keywords: Option<Vec<String>>,
-    pub(crate) actions: Option<Vec<String>>,
-    pub(crate) emotes: Option<Vec<String>>,
     pub(crate) name: Option<String>,
-    pub(crate) message: Option<String>,
-    pub(crate) file: Option<String>,
     pub(crate) triggers: Option<Vec<String>>,
     pub(crate) mentioned_user: Option<u64>,
+    pub(crate) actions: Option<Vec<Action>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Action {
+    pub(crate) action: Option<String>,
+    pub(crate) emotes: Option<Vec<String>>,
+    pub(crate) file: Option<String>,
+    pub(crate) message: Option<String>,
 }
 
 pub(crate) fn load_keyword_actions() -> Vec<KeywordAction> {

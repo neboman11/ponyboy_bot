@@ -841,6 +841,7 @@ name = "ponyboy_bot"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "rand",
  "regex",
  "reqwest",
  "serde",
