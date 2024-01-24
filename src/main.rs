@@ -2,7 +2,7 @@ use std::env;
 use std::path::Path;
 
 use regex::Regex;
-use serenity::all::UserId;
+use serenity::all::{ReactionType, UserId};
 use serenity::async_trait;
 use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
@@ -57,10 +57,8 @@ impl EventHandler for Handler {
                             "emote" => {
                                 let emotes = keyword_action.emotes.as_ref().unwrap();
                                 for emote in emotes {
-                                    if emote.chars().count() > 1 {
-                                        let emoji_id = serenity::all::EmojiId::new(
-                                            emote.parse::<u64>().unwrap(),
-                                        );
+                                    if let Ok(emote_id) = emote.parse::<u64>() {
+                                        let emoji_id = serenity::all::EmojiId::new(emote_id);
                                         let emoji = msg
                                             .guild_id
                                             .unwrap()
@@ -71,8 +69,9 @@ impl EventHandler for Handler {
                                             println!("Error sending message: {why:?}");
                                         }
                                     } else {
-                                        if let Err(why) =
-                                            msg.react(&ctx, emote.chars().next().unwrap()).await
+                                        if let Err(why) = msg
+                                            .react(&ctx, ReactionType::Unicode(emote.clone()))
+                                            .await
                                         {
                                             println!("Error sending message: {why:?}");
                                         }
