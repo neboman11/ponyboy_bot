@@ -14,16 +14,24 @@ struct LlamacppCompletionResponse {
 pub(crate) async fn generate_ai_bot_response(
     discord_username: String,
     discord_message: String,
+    discord_message_history: String,
 ) -> Result<String, String> {
+    let prompt = format!("This is a conversation between {user} and ponyboy, a friendly discord chatbot. ponyboy is helpful, kind, honest, good at writing, and never fails to answer any requests immediately and with precision.
+
+{history}
+{user}: {message}
+ponyboy:", user = discord_username, message = discord_message, history = discord_message_history);
+
     let client = reqwest::Client::new();
     let req = client
         .post("http://localhost:8080/completion")
         .json(&LlamacppCompletionRequest {
-            prompt: format!("This is a conversation between {user} and ponyboy, a friendly discord chatbot. ponyboy is helpful, kind, honest, good at writing, and never fails to answer any requests immediately and with precision.
-
-            {user}: {message}
-            ponyboy:", user = discord_username, message = discord_message),
-            stop: vec!["</s>".to_string(), "ponyboy:".to_string(), format!("{}:", discord_username)]
+            prompt: prompt,
+            stop: vec![
+                "</s>".to_string(),
+                "ponyboy:".to_string(),
+                format!("{}:", discord_username),
+            ],
         })
         .header("Content-Type", "application/json");
 

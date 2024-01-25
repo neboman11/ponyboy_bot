@@ -5,7 +5,7 @@ use rand::seq::SliceRandom;
 use regex::Regex;
 use serenity::all::{ReactionType, UserId};
 use serenity::async_trait;
-use serenity::builder::{CreateAttachment, CreateMessage};
+use serenity::builder::{CreateAttachment, CreateMessage, GetMessages};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -29,6 +29,18 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, incoming_message: Message) {
         if incoming_message.author.id != ctx.cache.current_user().id {
             if incoming_message.mentions_user_id(ctx.cache.current_user().id) {
+                let message_history_builder =
+                    GetMessages::new().before(incoming_message.id).limit(10);
+                let mut message_history = incoming_message
+                    .channel_id
+                    .messages(&ctx.http, message_history_builder)
+                    .await
+                    .unwrap();
+                message_history.reverse();
+                let message_history_string = convert_message_list_to_history_string(
+                    ctx.cache.current_user().id.into(),
+                    message_history,
+                );
                 let trimmed_message = incoming_message.content.replace(
                     format!("<@{}>", ctx.cache.current_user().id).as_str(),
                     "ponyboy",
@@ -36,6 +48,7 @@ impl EventHandler for Handler {
                 if let Ok(generated_message) = ai::generate_ai_bot_response(
                     incoming_message.author.name.clone(),
                     trimmed_message,
+                    message_history_string,
                 )
                 .await
                 {
@@ -238,4 +251,23 @@ async fn main() {
 
     // Running both the REST server and the Discord bot concurrently
     futures::join!(rest_server, discord_bot);
+}
+
+fn convert_message_list_to_history_string(bot_id: u64, message_list: Vec<Message>) -> String {
+    let mut message_string_list = Vec::new();
+
+    for message in message_list {
+        println!("{}", message.content);
+        if message.content != "" {
+            message_string_list.push(format!(
+                "{}: {}",
+                message.author.name,
+                message
+                    .content
+                    .replace(format!("<@{}>", bot_id).as_str(), "ponyboy",)
+            ));
+        }
+    }
+
+    return message_string_list.join("\n");
 }
