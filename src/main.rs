@@ -10,6 +10,7 @@ use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 
+mod ai;
 mod api;
 mod keyword_action;
 
@@ -27,6 +28,30 @@ impl EventHandler for Handler {
     // simultaneously.
     async fn message(&self, ctx: Context, incoming_message: Message) {
         if incoming_message.author.id != ctx.cache.current_user().id {
+            if incoming_message.mentions_user_id(ctx.cache.current_user().id) {
+                let trimmed_message = incoming_message.content.replace(
+                    format!("<@{}>", ctx.cache.current_user().id).as_str(),
+                    "ponyboy",
+                );
+                if let Ok(generated_message) = ai::generate_ai_bot_response(
+                    incoming_message.author.name.clone(),
+                    trimmed_message,
+                )
+                .await
+                {
+                    if let Err(why) = incoming_message
+                        .channel_id
+                        .say(&ctx.http, &generated_message)
+                        .await
+                    {
+                        println!("Error sending message: {why:?}");
+                    }
+                    println!(
+                        "{}: {} - {}",
+                        "generated_message", "message", generated_message
+                    );
+                }
+            }
             for keyword_action in &self.keyword_actions {
                 let mut message_matches_action = false;
 
