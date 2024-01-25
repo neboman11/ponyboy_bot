@@ -257,7 +257,6 @@ fn convert_message_list_to_history_string(bot_id: u64, message_list: Vec<Message
     let mut message_string_list = Vec::new();
 
     for message in message_list {
-        println!("{}", message.content);
         if message.content != "" {
             message_string_list.push(format!(
                 "{}: {}",

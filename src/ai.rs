@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 struct LlamacppCompletionRequest {
     pub(crate) prompt: String,
     pub(crate) stop: Vec<String>,
+    pub(crate) temperature: f64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -16,7 +17,7 @@ pub(crate) async fn generate_ai_bot_response(
     discord_message: String,
     discord_message_history: String,
 ) -> Result<String, String> {
-    let prompt = format!("This is a conversation between {user} and ponyboy, a friendly discord chatbot. ponyboy is helpful, kind, honest, good at writing, and never fails to answer any requests immediately and with precision.
+    let prompt = format!("This is a conversation between {user} and ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, aggressive, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses.
 
 {history}
 {user}: {message}
@@ -32,6 +33,7 @@ ponyboy:", user = discord_username, message = discord_message, history = discord
                 "ponyboy:".to_string(),
                 format!("{}:", discord_username),
             ],
+            temperature: 1.1,
         })
         .header("Content-Type", "application/json");
 
