@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  ponyboy:
+    build: .
+    ports:
+      - 8081:8081
+    volumes:
+      - ./data:/data
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - FILE_BASE_DIR=${FILE_BASE_DIR}
+      - COMPLETION_URL=${COMPLETION_URL}
