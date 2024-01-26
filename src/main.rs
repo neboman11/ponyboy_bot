@@ -45,24 +45,29 @@ impl EventHandler for Handler {
                     format!("<@{}>", ctx.cache.current_user().id).as_str(),
                     "ponyboy",
                 );
-                if let Ok(generated_message) = ai::generate_ai_bot_response(
+                match ai::generate_ai_bot_response(
                     incoming_message.author.name.clone(),
                     trimmed_message,
                     message_history_string,
                 )
                 .await
                 {
-                    if let Err(why) = incoming_message
-                        .channel_id
-                        .say(&ctx.http, &generated_message)
-                        .await
-                    {
-                        println!("Error sending message: {why:?}");
+                    Ok(generated_message) => {
+                        if let Err(why) = incoming_message
+                            .channel_id
+                            .say(&ctx.http, &generated_message)
+                            .await
+                        {
+                            println!("Error sending message: {why:?}");
+                        }
+                        println!(
+                            "{}: {} - {}",
+                            "generated_message", "message", generated_message
+                        );
                     }
-                    println!(
-                        "{}: {} - {}",
-                        "generated_message", "message", generated_message
-                    );
+                    Err(error) => {
+                        println!("Unable to generate message response: {}", error)
+                    }
                 }
             }
             for keyword_action in &self.keyword_actions {
@@ -128,12 +133,13 @@ impl EventHandler for Handler {
                     let mut sending_embed_message = false;
                     if let Some(file) = random_action.file.as_ref() {
                         sending_embed_message = true;
-                        let paths =
-                            [
-                                CreateAttachment::path(Path::new(&self.file_base_dir).join(file))
-                                    .await
-                                    .unwrap(),
-                            ];
+                        let paths = [CreateAttachment::path(
+                            Path::new(&self.file_base_dir)
+                                .join("file_embeds")
+                                .join(file),
+                        )
+                        .await
+                        .unwrap()];
 
                         let builder;
                         let message: String;

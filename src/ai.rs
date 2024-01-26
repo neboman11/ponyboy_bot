@@ -1,3 +1,5 @@
+use std::env;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -23,9 +25,11 @@ pub(crate) async fn generate_ai_bot_response(
 {user}: {message}
 ponyboy:", user = discord_username, message = discord_message, history = discord_message_history);
 
+    let completion_url =
+        env::var("COMPLETION_URL").expect("Expected completion URL to be set in the environment");
     let client = reqwest::Client::new();
     let req = client
-        .post("http://localhost:8080/completion")
+        .post(completion_url)
         .json(&LlamacppCompletionRequest {
             prompt: prompt,
             stop: vec![
