@@ -28,6 +28,8 @@ impl EventHandler for Handler {
     // simultaneously.
     async fn message(&self, ctx: Context, incoming_message: Message) {
         if incoming_message.author.id != ctx.cache.current_user().id {
+            // Check if message mentions ponyboy
+            // This indicates user is requesting ponyboy to generate a response
             if incoming_message.mentions_user_id(ctx.cache.current_user().id) {
                 let message_history_builder =
                     GetMessages::new().before(incoming_message.id).limit(10);
@@ -69,6 +71,9 @@ impl EventHandler for Handler {
                         println!("Unable to generate message response: {}", error)
                     }
                 }
+
+                // Return at end to prevent ponyboy from processing any keyword actions
+                return;
             }
             for keyword_action in &self.keyword_actions {
                 let mut message_matches_action = false;
