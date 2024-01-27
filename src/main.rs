@@ -39,7 +39,7 @@ impl EventHandler for Handler {
                     .await
                     .unwrap();
                 message_history.reverse();
-                let message_history_string = convert_message_list_to_history_string(
+                let message_history_string = convert_message_list_to_history(
                     ctx.cache.current_user().id.into(),
                     message_history,
                 );
@@ -62,10 +62,7 @@ impl EventHandler for Handler {
                         {
                             println!("Error sending message: {why:?}");
                         }
-                        println!(
-                            "{}: {} - {}",
-                            "generated_message", "message", generated_message
-                        );
+                        println!("{}: {}", "generated_message", "message");
                     }
                     Err(error) => {
                         println!("Unable to generate message response: {}", error)
@@ -264,20 +261,25 @@ async fn main() {
     futures::join!(rest_server, discord_bot);
 }
 
-fn convert_message_list_to_history_string(bot_id: u64, message_list: Vec<Message>) -> String {
+fn convert_message_list_to_history(
+    bot_id: u64,
+    message_list: Vec<Message>,
+) -> Vec<(String, String)> {
     let mut message_string_list = Vec::new();
 
     for message in message_list {
         if message.content != "" {
-            message_string_list.push(format!(
-                "{}: {}",
+            message_string_list.push((
                 message.author.name,
-                message
-                    .content
-                    .replace(format!("<@{}>", bot_id).as_str(), "ponyboy",)
+                format!(
+                    "{}",
+                    message
+                        .content
+                        .replace(format!("<@{}>", bot_id).as_str(), "ponyboy",)
+                ),
             ));
         }
     }
 
-    return message_string_list.join("\n");
+    return message_string_list;
 }

@@ -17,13 +17,29 @@ struct LlamacppCompletionResponse {
 pub(crate) async fn generate_ai_bot_response(
     discord_username: String,
     discord_message: String,
-    discord_message_history: String,
+    discord_message_history: Vec<(String, String)>,
 ) -> Result<String, String> {
-    let prompt = format!("This is a conversation between {user} and ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, aggressive, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses.
+    let mut prompt = "SYSTEM: You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n".to_string();
 
-{history}
-{user}: {message}
-ponyboy:", user = discord_username, message = discord_message, history = discord_message_history);
+    for (user, message) in &discord_message_history {
+        prompt += format!("{}: {}\n", user, message).as_str();
+    }
+
+    prompt += format!(
+        "{}: {}
+ponyboy:",
+        discord_username, discord_message,
+    )
+    .as_str();
+
+    let mut stop_words = vec![
+        "</s>".to_string(),
+        "ponyboy:".to_string(),
+        format!("{}:", discord_username),
+    ];
+    for (user, _) in discord_message_history {
+        stop_words.push(format!("{}:", user));
+    }
 
     let completion_url =
         env::var("COMPLETION_URL").expect("Expected completion URL to be set in the environment");
@@ -32,12 +48,8 @@ ponyboy:", user = discord_username, message = discord_message, history = discord
         .post(completion_url)
         .json(&LlamacppCompletionRequest {
             prompt: prompt,
-            stop: vec![
-                "</s>".to_string(),
-                "ponyboy:".to_string(),
-                format!("{}:", discord_username),
-            ],
-            temperature: 1.1,
+            stop: stop_words,
+            temperature: 1.0,
         })
         .header("Content-Type", "application/json");
 
