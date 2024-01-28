@@ -34,7 +34,7 @@ pub(crate) async fn start_api_server(discord_token: String) {
                 send_discord_message(discord_token.clone(), body)
             }
         });
-    warp::serve(rest_route).run(([127, 0, 0, 1], 8081)).await;
+    warp::serve(rest_route).run(([0, 0, 0, 0], 8081)).await;
 }
 
 async fn send_discord_message(
