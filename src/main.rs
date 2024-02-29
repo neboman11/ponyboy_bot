@@ -264,12 +264,13 @@ async fn main() {
 fn convert_message_list_to_history(
     bot_id: u64,
     message_list: Vec<Message>,
-) -> Vec<(String, String)> {
+) -> Vec<(String, String, String)> {
     let mut message_string_list = Vec::new();
 
     for message in message_list {
         if message.content != "" {
             message_string_list.push((
+                message.timestamp.to_rfc3339().unwrap(),
                 message.author.name,
                 format!(
                     "{}",

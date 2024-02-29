@@ -17,12 +17,12 @@ struct LlamacppCompletionResponse {
 pub(crate) async fn generate_ai_bot_response(
     discord_username: String,
     discord_message: String,
-    discord_message_history: Vec<(String, String)>,
+    discord_message_history: Vec<(String, String, String)>,
 ) -> Result<String, String> {
     let mut prompt = "SYSTEM: You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n".to_string();
 
-    for (user, message) in &discord_message_history {
-        prompt += format!("{}: {}\n", user, message).as_str();
+    for (timestamp, user, message) in &discord_message_history {
+        prompt += format!("{} - {}: {}\n", timestamp, user, message).as_str();
     }
 
     prompt += format!(
@@ -37,7 +37,7 @@ ponyboy:",
         "ponyboy:".to_string(),
         format!("{}:", discord_username),
     ];
-    for (user, _) in discord_message_history {
+    for (_, user, _) in discord_message_history {
         stop_words.push(format!("{}:", user));
     }
 

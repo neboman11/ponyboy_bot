@@ -43,7 +43,11 @@ async fn send_discord_message(
 ) -> Result<impl warp::Reply, Infallible> {
     let channel_id = match create_discord_dm_channel(discord_token.clone(), body.user_id).await {
         Ok(res) => res,
-        Err(err) => return Ok(warp::reply::Response::new(format!("{}", err).into())),
+        Err(err) => {
+            return Ok(warp::reply::Response::new(
+                format!("Unable to create DM with user: {}", err).into(),
+            ))
+        }
     };
 
     let client = reqwest::Client::new();
@@ -60,7 +64,11 @@ async fn send_discord_message(
 
     let res = match req.send().await {
         Ok(res) => res,
-        Err(err) => return Ok(warp::reply::Response::new(format!("{}", err).into())),
+        Err(err) => {
+            return Ok(warp::reply::Response::new(
+                format!("Unable to send message to user: {}", err).into(),
+            ))
+        }
     };
 
     if !res.status().is_success() {
