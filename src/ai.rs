@@ -80,6 +80,8 @@ pub(crate) async fn generate_ai_bot_response(
         env::var("COMPLETION_URL").expect("Expected completion URL to be set in the environment");
     let completion_model = env::var("COMPLETION_MODEL")
         .expect("Expected completion model to be set in the environment");
+    let completion_api_key = env::var("COMPLETION_API_KEY")
+        .expect("Expected completion API key to be set in the environment");
     let client = reqwest::Client::new();
     let req = client
         .post(completion_url)
@@ -89,6 +91,7 @@ pub(crate) async fn generate_ai_bot_response(
             temperature: 1.0,
             model: completion_model,
         })
+        .header("Authorization", format!("Bearer {}", completion_api_key))
         .header("Content-Type", "application/json");
 
     let res = match req.send().await {
