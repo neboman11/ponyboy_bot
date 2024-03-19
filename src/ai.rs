@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 struct LocalAICompletionMessage {
     pub(crate) content: String,
-    pub(crate) name: String,
+    pub(crate) name: Option<String>,
     pub(crate) role: String,
 }
 
@@ -35,7 +35,7 @@ pub(crate) async fn generate_ai_bot_response(
     let mut messages = Vec::new();
     messages.push(LocalAICompletionMessage{
         content: "You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n".to_string(),
-        name: "SYSTEM".to_string(),
+        name: Some("SYSTEM".to_string()),
         role: "SYSTEM".to_string(),
     });
 
@@ -43,20 +43,20 @@ pub(crate) async fn generate_ai_bot_response(
         if user == "ponyboy" {
             messages.push(LocalAICompletionMessage {
                 content: format!("{} - {}: {}\n", timestamp, user, message),
-                name: user.clone(),
+                name: Some(user.clone()),
                 role: "ASSISTANT".to_string(),
             });
         }
         messages.push(LocalAICompletionMessage {
             content: format!("{} - {}: {}\n", timestamp, user, message),
-            name: user.clone(),
+            name: Some(user.clone()),
             role: "USER".to_string(),
         });
     }
 
     messages.push(LocalAICompletionMessage {
         content: discord_message,
-        name: discord_username.clone(),
+        name: Some(discord_username.clone()),
         role: "USER".to_string(),
     });
 
