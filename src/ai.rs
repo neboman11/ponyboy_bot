@@ -34,30 +34,31 @@ pub(crate) async fn generate_ai_bot_response(
 ) -> Result<String, String> {
     let mut messages = Vec::new();
     messages.push(LocalAICompletionMessage{
-        content: "You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n".to_string(),
-        name: Some("SYSTEM".to_string()),
-        role: "SYSTEM".to_string(),
+        content: "You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.".to_string(),
+        name: Some("system".to_string()),
+        role: "system".to_string(),
     });
 
     for (timestamp, user, message) in &discord_message_history {
         if user == "ponyboy" {
             messages.push(LocalAICompletionMessage {
-                content: format!("{} - {}: {}\n", timestamp, user, message),
-                name: Some(user.clone()),
-                role: "ASSISTANT".to_string(),
+                content: message.to_string(),
+                name: Some(user.to_string()),
+                role: "assistant".to_string(),
+            });
+        } else {
+            messages.push(LocalAICompletionMessage {
+                content: message.to_string(),
+                name: Some(user.to_string()),
+                role: "user".to_string(),
             });
         }
-        messages.push(LocalAICompletionMessage {
-            content: format!("{} - {}: {}\n", timestamp, user, message),
-            name: Some(user.clone()),
-            role: "USER".to_string(),
-        });
     }
 
     messages.push(LocalAICompletionMessage {
         content: discord_message,
         name: Some(discord_username.clone()),
-        role: "USER".to_string(),
+        role: "user".to_string(),
     });
 
     //     messages += format!(
