@@ -2,16 +2,9 @@ use std::env;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
-struct LocalAICompletionMessage {
-    pub(crate) content: String,
-    pub(crate) name: Option<String>,
-    pub(crate) role: String,
-}
-
 #[derive(Serialize, Debug)]
 struct LocalAICompletionRequest {
-    pub(crate) messages: Vec<LocalAICompletionMessage>,
+    pub(crate) prompt: String,
     pub(crate) model: String,
     pub(crate) stop: Vec<String>,
     pub(crate) temperature: f64,
@@ -19,7 +12,7 @@ struct LocalAICompletionRequest {
 
 #[derive(Deserialize, Debug)]
 struct LocalAICompletionChoices {
-    pub(crate) message: LocalAICompletionMessage,
+    pub(crate) text: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -32,46 +25,26 @@ pub(crate) async fn generate_ai_bot_response(
     discord_message: String,
     discord_message_history: Vec<(String, String, String)>,
 ) -> Result<String, String> {
-    let mut messages = Vec::new();
-    messages.push(LocalAICompletionMessage{
-        content: "You are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.".to_string(),
-        name: Some("system".to_string()),
-        role: "system".to_string(),
-    });
+    let mut prompt = "<im_start>system\nYou are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n\n".to_string();
 
-    for (timestamp, user, message) in &discord_message_history {
-        if user == "ponyboy" {
-            messages.push(LocalAICompletionMessage {
-                content: message.to_string(),
-                name: Some(user.to_string()),
-                role: "assistant".to_string(),
-            });
-        } else {
-            messages.push(LocalAICompletionMessage {
-                content: message.to_string(),
-                name: Some(user.to_string()),
-                role: "user".to_string(),
-            });
-        }
+    prompt += "Message History\n";
+    for (_, user, message) in &discord_message_history {
+        prompt += format!("{}: {}\n", user, message).as_str();
     }
+    prompt += "<|im_end|>\n";
 
-    messages.push(LocalAICompletionMessage {
-        content: discord_message,
-        name: Some(discord_username.clone()),
-        role: "user".to_string(),
-    });
+    prompt += "\n<|im_start|>user\n";
+    prompt += format!("{}: {}", discord_username, discord_message,).as_str();
+    prompt += "<|im_end|>\n";
 
-    //     messages += format!(
-    //         "{}: {}
-    // ponyboy:",
-    //         discord_username, discord_message,
-    //     )
-    //     .as_str();
+    prompt += "\n<|im_start|>assistant\nponyboy:";
 
     let mut stop_words = vec![
         "</s>".to_string(),
         "ponyboy:".to_string(),
+        "class-watcher:".to_string(),
         format!("{}:", discord_username),
+        "<|im_end|>".to_string(),
     ];
     for (_, user, _) in discord_message_history {
         stop_words.push(format!("{}:", user));
@@ -87,7 +60,7 @@ pub(crate) async fn generate_ai_bot_response(
     let req = client
         .post(completion_url)
         .json(&LocalAICompletionRequest {
-            messages,
+            prompt,
             stop: stop_words,
             temperature: 1.0,
             model: completion_model,
@@ -110,5 +83,5 @@ pub(crate) async fn generate_ai_bot_response(
         .unwrap()
         .choices;
 
-    Ok(response_choices[0].message.content.clone())
+    Ok(response_choices[0].text.clone())
 }
