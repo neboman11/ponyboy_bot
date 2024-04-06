@@ -5,7 +5,7 @@ use rand::seq::SliceRandom;
 use regex::Regex;
 use serenity::all::{ReactionType, UserId};
 use serenity::async_trait;
-use serenity::builder::{CreateAttachment, CreateMessage, GetMessages};
+use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -13,6 +13,7 @@ use serenity::prelude::*;
 mod ai;
 mod api;
 mod keyword_action;
+mod message_processing;
 
 struct Handler {
     pub(crate) keyword_actions: Vec<keyword_action::KeywordAction>,
@@ -31,43 +32,7 @@ impl EventHandler for Handler {
             // Check if message mentions ponyboy
             // This indicates user is requesting ponyboy to generate a response
             if incoming_message.mentions_user_id(ctx.cache.current_user().id) {
-                let message_history_builder =
-                    GetMessages::new().before(incoming_message.id).limit(10);
-                let mut message_history = incoming_message
-                    .channel_id
-                    .messages(&ctx.http, message_history_builder)
-                    .await
-                    .unwrap();
-                message_history.reverse();
-                let message_history_string = convert_message_list_to_history(
-                    ctx.cache.current_user().id.into(),
-                    message_history,
-                );
-                let trimmed_message = incoming_message.content.replace(
-                    format!("<@{}>", ctx.cache.current_user().id).as_str(),
-                    "ponyboy",
-                );
-                match ai::generate_ai_bot_response(
-                    incoming_message.author.name.clone(),
-                    trimmed_message,
-                    message_history_string,
-                )
-                .await
-                {
-                    Ok(generated_message) => {
-                        if let Err(why) = incoming_message
-                            .channel_id
-                            .say(&ctx.http, &generated_message)
-                            .await
-                        {
-                            println!("Error sending message: {why:?}");
-                        }
-                        println!("{}: {}", "generated_message", "message");
-                    }
-                    Err(error) => {
-                        println!("Unable to generate message response: {}", error)
-                    }
-                }
+                message_processing::send_llm_generated_message(&ctx, incoming_message).await;
 
                 // Return at end to prevent ponyboy from processing any keyword actions
                 return;
@@ -259,28 +224,4 @@ async fn main() {
 
     // Running both the REST server and the Discord bot concurrently
     futures::join!(rest_server, discord_bot);
-}
-
-fn convert_message_list_to_history(
-    bot_id: u64,
-    message_list: Vec<Message>,
-) -> Vec<(String, String, String)> {
-    let mut message_string_list = Vec::new();
-
-    for message in message_list {
-        if message.content != "" {
-            message_string_list.push((
-                message.timestamp.to_rfc3339().unwrap(),
-                message.author.name,
-                format!(
-                    "{}",
-                    message
-                        .content
-                        .replace(format!("<@{}>", bot_id).as_str(), "ponyboy",)
-                ),
-            ));
-        }
-    }
-
-    return message_string_list;
 }
