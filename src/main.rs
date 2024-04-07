@@ -1,11 +1,6 @@
 use std::env;
-use std::path::Path;
 
-use rand::seq::SliceRandom;
-use regex::Regex;
-use serenity::all::{ReactionType, UserId};
 use serenity::async_trait;
-use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -33,146 +28,14 @@ impl EventHandler for Handler {
             // This indicates user is requesting ponyboy to generate a response
             if incoming_message.mentions_user_id(ctx.cache.current_user().id) {
                 message_processing::send_llm_generated_message(&ctx, incoming_message).await;
-
-                // Return at end to prevent ponyboy from processing any keyword actions
-                return;
-            }
-            for keyword_action in &self.keyword_actions {
-                let mut message_matches_action = false;
-
-                // Check if a specific user is mentioned in the message
-                let triggers = keyword_action.triggers.as_ref().unwrap();
-                if triggers.contains(&"mention".to_string()) {
-                    let mentioned_user = keyword_action.mentioned_user.as_ref().unwrap();
-                    let user_id = UserId::new(*mentioned_user);
-                    if incoming_message.mentions_user_id(user_id) {
-                        message_matches_action = true;
-                    }
-                }
-
-                // Check if a keyword is used in the message
-                let regex_keyword_group = keyword_action
-                    .keywords
-                    .as_ref()
-                    .unwrap()
-                    .join(r"( |[\?\.',]|$)|(^| )");
-                let re = Regex::new(format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)").as_str())
-                    .unwrap();
-                if re.is_match(incoming_message.content.as_str()) {
-                    message_matches_action = true;
-                }
-                if message_matches_action {
-                    let random_action = keyword_action
-                        .actions
-                        .as_ref()
-                        .unwrap()
-                        .choose(&mut rand::thread_rng())
-                        .unwrap();
-                    if let Some(emotes) = random_action.emotes.as_ref() {
-                        for emote in emotes {
-                            if let Ok(emote_id) = emote.parse::<u64>() {
-                                let emoji_id = serenity::all::EmojiId::new(emote_id);
-                                let emoji = incoming_message
-                                    .guild_id
-                                    .unwrap()
-                                    .emoji(&ctx, emoji_id)
-                                    .await
-                                    .unwrap();
-                                if let Err(why) = incoming_message.react(&ctx, emoji).await {
-                                    println!("Error sending message: {why:?}");
-                                }
-                            } else {
-                                if let Err(why) = incoming_message
-                                    .react(&ctx, ReactionType::Unicode(emote.clone()))
-                                    .await
-                                {
-                                    println!("Error sending message: {why:?}");
-                                }
-                            }
-                        }
-                        println!(
-                            "{}: {} - {:#?}",
-                            keyword_action.name.as_ref().unwrap(),
-                            "emote",
-                            emotes
-                        );
-                    }
-                    let mut sending_embed_message = false;
-                    if let Some(file) = random_action.file.as_ref() {
-                        sending_embed_message = true;
-                        let paths = [CreateAttachment::path(
-                            Path::new(&self.file_base_dir)
-                                .join("file_embeds")
-                                .join(file),
-                        )
-                        .await
-                        .unwrap()];
-
-                        let builder;
-                        let message: String;
-                        let mut add_message = false;
-                        match random_action.message.as_ref() {
-                            Some(config_message) => {
-                                message = config_message.clone();
-                                add_message = true;
-                            }
-                            None => {
-                                message = file.clone();
-                            }
-                        }
-                        if add_message {
-                            builder = CreateMessage::new().content(&message);
-                        } else {
-                            builder = CreateMessage::new();
-                        }
-                        if let Err(why) = incoming_message
-                            .channel_id
-                            .send_files(&ctx.http, paths, builder)
-                            .await
-                        {
-                            println!("Error sending message: {why:?}");
-                        }
-                        println!(
-                            "{}: {} - {}",
-                            keyword_action.name.as_ref().unwrap(),
-                            "file_embed",
-                            message
-                        );
-                    }
-                    if let Some(message) = random_action.message.as_ref() {
-                        if !sending_embed_message {
-                            if let Err(why) =
-                                incoming_message.channel_id.say(&ctx.http, message).await
-                            {
-                                println!("Error sending message: {why:?}");
-                            }
-                            println!(
-                                "{}: {} - {}",
-                                keyword_action.name.as_ref().unwrap(),
-                                "message",
-                                message
-                            );
-                        }
-                    }
-                    if let Some(message) = random_action.mention.as_ref() {
-                        let mentioned_user = incoming_message.author.mention();
-                        let formatted_messaage =
-                            message.replace("@mention", format!("{}", mentioned_user).as_str());
-                        if let Err(why) = incoming_message
-                            .channel_id
-                            .say(&ctx.http, formatted_messaage)
-                            .await
-                        {
-                            println!("Error sending message: {why:?}");
-                        }
-                        println!(
-                            "{}: {} - {}",
-                            keyword_action.name.as_ref().unwrap(),
-                            "message",
-                            message
-                        );
-                    }
-                }
+            } else {
+                message_processing::process_keyword_actions(
+                    &ctx,
+                    incoming_message,
+                    &self.keyword_actions,
+                    &self.file_base_dir,
+                )
+                .await;
             }
         }
     }
