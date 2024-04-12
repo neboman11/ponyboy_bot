@@ -1,5 +1,6 @@
 use std::env;
 
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -20,12 +21,26 @@ struct LocalAICompletionResponse {
     pub(crate) choices: Vec<LocalAICompletionChoices>,
 }
 
+#[derive(Deserialize, Debug)]
+struct ConfigurationSetting {
+    // pub(crate) section: String,
+    // pub(crate) name: String,
+    pub(crate) value: String,
+}
+
 pub(crate) async fn generate_ai_bot_response(
     discord_username: String,
     discord_message: String,
     discord_message_history: Vec<(String, String, String)>,
 ) -> Result<String, String> {
-    let mut prompt = "<im_start>system\nYou are ponyboy, a friendly discord chatbot. ponyboy is snarky, edgy, creative, and kind. ponyboy likes being contrarian and picking sides. ponyboy always has lots to say about any topic and loves being creative and wordy with responses. This is a conversation between multiple users and ponyboy.\n\n".to_string();
+    let client = reqwest::Client::new();
+    let base_prompt =
+        match fetch_config_setting(&client, format!("ponyboy"), format!("base_prompt")).await {
+            Ok(base_prompt) => base_prompt,
+            Err(err) => return Err(err),
+        };
+
+    let mut prompt = format!("<im_start>system\n{}\n\n", base_prompt);
 
     prompt += "Message History\n";
     for (_, user, message) in &discord_message_history {
@@ -52,11 +67,18 @@ pub(crate) async fn generate_ai_bot_response(
 
     let completion_url =
         env::var("COMPLETION_URL").expect("Expected completion URL to be set in the environment");
-    let completion_model = env::var("COMPLETION_MODEL")
-        .expect("Expected completion model to be set in the environment");
+    let completion_model = match fetch_config_setting(
+        &client,
+        format!("ponyboy"),
+        format!("completion_model"),
+    )
+    .await
+    {
+        Ok(base_prompt) => base_prompt,
+        Err(err) => return Err(err),
+    };
     let completion_api_key = env::var("COMPLETION_API_KEY")
         .expect("Expected completion API key to be set in the environment");
-    let client = reqwest::Client::new();
     let req = client
         .post(completion_url)
         .json(&LocalAICompletionRequest {
@@ -84,4 +106,39 @@ pub(crate) async fn generate_ai_bot_response(
         .choices;
 
     Ok(response_choices[0].text.clone())
+}
+
+async fn fetch_config_setting(
+    client: &Client,
+    section: String,
+    name: String,
+) -> Result<String, String> {
+    let config_settings_url = match env::var("CONFIG_SETTINGS_URL") {
+        Ok(config_setting_url) => config_setting_url,
+        Err(_) => {
+            return Err(
+                "Expected configuration settings service URL to be set in the environment"
+                    .to_string(),
+            )
+        }
+    };
+    let config_settings_path = format!("configuration_setting/{}/{}", section, name);
+
+    let req = client.get(format!("{}{}", config_settings_url, config_settings_path));
+
+    let res = match req.send().await {
+        Ok(res) => res,
+        Err(err) => return Err(format!("{}", err)),
+    };
+
+    if !res.status().is_success() {
+        return Err(res.text().await.unwrap());
+    }
+
+    let value = match res.json::<ConfigurationSetting>().await {
+        Ok(config_setting) => config_setting.value,
+        Err(err) => return Err(format!("{}", err)),
+    };
+
+    Ok(value)
 }
