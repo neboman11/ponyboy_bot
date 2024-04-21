@@ -2,7 +2,7 @@
 authors = ["Michael Nesibtt <michael.nesbitt111@gmail.com>"]
 edition = "2018"
 name = "ponyboy_bot"
-version = "0.2.1"
+version = "0.2.2"
 
 [dependencies]
 futures = "0.3.30"
