@@ -69,7 +69,10 @@ pub(crate) async fn send_llm_generated_message(ctx: &Context, incoming_message: 
             println!("{}: {}", "generated_message", "message");
         }
         Err(error) => {
-            println!("Unable to generate message response: {}", error)
+            println!("Unable to generate message response: {}", error);
+            if let Err(why) = incoming_message.channel_id.say(&ctx.http, "😴").await {
+                println!("Error sending message: {why:?}");
+            }
         }
     }
 }
