@@ -10,23 +10,24 @@ use serenity::prelude::*;
 use crate::{ai, keyword_action};
 
 pub(crate) async fn send_llm_generated_message(ctx: &Context, incoming_message: Message) {
-    let message_history_builder = GetMessages::new().before(incoming_message.id).limit(10);
-    let mut message_history = incoming_message
+    let bot_user = ctx.http.get_current_user().await.unwrap();
+    let message_list_builder = GetMessages::new().before(incoming_message.id).limit(10);
+    let mut message_list = incoming_message
         .channel_id
-        .messages(&ctx.http, message_history_builder)
+        .messages(&ctx.http, message_list_builder)
         .await
         .unwrap();
-    message_history.reverse();
-    let message_history_string =
-        convert_message_list_to_history(ctx.cache.current_user().id.into(), message_history);
+    message_list.reverse();
+    let message_history = convert_message_list_to_history(bot_user.id.into(), message_list);
     let trimmed_message = incoming_message.content.replace(
-        format!("<@{}>", ctx.cache.current_user().id).as_str(),
-        "ponyboy",
+        format!("<@{}>", bot_user.id).as_str(),
+        bot_user.name.as_str(),
     );
     match ai::generate_ai_bot_response(
+        bot_user.name.clone(),
         incoming_message.author.name.clone(),
         trimmed_message,
-        message_history_string,
+        message_history,
     )
     .await
     {

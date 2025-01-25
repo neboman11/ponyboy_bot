@@ -4,31 +4,35 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
-struct LocalAICompletionRequest {
-    pub(crate) prompt: String,
-    pub(crate) model: String,
-    pub(crate) stop: Vec<String>,
-    pub(crate) temperature: f64,
+struct OpenAIChatRequest {
+    model: String,
+    messages: Vec<OpenAIMessage>,
+    temperature: f64,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct OpenAIMessage {
+    role: String,
+    content: String,
 }
 
 #[derive(Deserialize, Debug)]
-struct LocalAICompletionChoices {
-    pub(crate) text: String,
+struct OpenAIChatResponse {
+    choices: Vec<OpenAIChatChoice>,
 }
 
 #[derive(Deserialize, Debug)]
-struct LocalAICompletionResponse {
-    pub(crate) choices: Vec<LocalAICompletionChoices>,
+struct OpenAIChatChoice {
+    message: OpenAIMessage,
 }
 
 #[derive(Deserialize, Debug)]
 struct ConfigurationSetting {
-    // pub(crate) section: String,
-    // pub(crate) name: String,
-    pub(crate) value: String,
+    value: String,
 }
 
 pub(crate) async fn generate_ai_bot_response(
+    bot_username: String,
     discord_username: String,
     discord_message: String,
     discord_message_history: Vec<(String, String, String)>,
@@ -40,33 +44,53 @@ pub(crate) async fn generate_ai_bot_response(
             Err(err) => return Err(err),
         };
 
-    let mut prompt = format!("<im_start>system\n{}\n\n", base_prompt);
+    let mut messages = vec![OpenAIMessage {
+        role: "system".to_string(),
+        content: base_prompt,
+    }];
 
-    prompt += "Message History\n";
+    let mut unique_users: Vec<String> = discord_message_history
+        .iter()
+        .map(|(_, user, _)| user.clone())
+        .collect();
+    unique_users.sort();
+    unique_users.dedup();
+
+    let group_members = unique_users.join(", ");
+    messages.push(OpenAIMessage {
+        role: "system".to_string(),
+        content: format!("[Start a new group chat. Group members: {}]", group_members),
+    });
     for (_, user, message) in &discord_message_history {
-        prompt += format!("{}: {}\n", user, message).as_str();
-    }
-    prompt += "<|im_end|>\n";
-
-    prompt += "\n<|im_start|>user\n";
-    prompt += format!("{}: {}", discord_username, discord_message,).as_str();
-    prompt += "<|im_end|>\n";
-
-    prompt += "\n<|im_start|>assistant\nponyboy:";
-
-    let mut stop_words = vec![
-        "</s>".to_string(),
-        "ponyboy:".to_string(),
-        "class-watcher:".to_string(),
-        format!("{}:", discord_username),
-        "<|im_end|>".to_string(),
-    ];
-    for (_, user, _) in discord_message_history {
-        stop_words.push(format!("{}:", user));
+        if user.eq(&bot_username) {
+            messages.push(OpenAIMessage {
+                role: "assistant".to_string(),
+                content: format!("{}", message),
+            });
+        } else {
+            messages.push(OpenAIMessage {
+                role: "user".to_string(),
+                content: format!("{}: {}", user, message),
+            });
+        }
     }
 
-    let completion_url =
-        env::var("COMPLETION_URL").expect("Expected completion URL to be set in the environment");
+    messages.push(OpenAIMessage {
+        role: "user".to_string(),
+        content: format!("{}: {}", discord_username, discord_message),
+    });
+
+    messages.push(OpenAIMessage {
+        role: "system".to_string(),
+        content: format!("[Write the next reply only as {}.]", bot_username),
+    });
+
+    let completion_base_url =
+        match fetch_config_setting(&client, format!("ponyboy"), format!("openai_base_url")).await {
+            Ok(completion_base_url) => completion_base_url,
+            Err(err) => return Err(err),
+        };
+
     let completion_model = match fetch_config_setting(
         &client,
         format!("ponyboy"),
@@ -74,18 +98,18 @@ pub(crate) async fn generate_ai_bot_response(
     )
     .await
     {
-        Ok(base_prompt) => base_prompt,
+        Ok(completion_model) => completion_model,
         Err(err) => return Err(err),
     };
     let completion_api_key = env::var("COMPLETION_API_KEY")
         .expect("Expected completion API key to be set in the environment");
+
     let req = client
-        .post(completion_url)
-        .json(&LocalAICompletionRequest {
-            prompt,
-            stop: stop_words,
-            temperature: 1.0,
+        .post(completion_base_url + "/v1/chat/completions")
+        .json(&OpenAIChatRequest {
             model: completion_model,
+            messages,
+            temperature: 1.0,
         })
         .header("Authorization", format!("Bearer {}", completion_api_key))
         .header("Content-Type", "application/json");
@@ -99,13 +123,9 @@ pub(crate) async fn generate_ai_bot_response(
         return Err(res.text().await.unwrap());
     }
 
-    let response_choices = res
-        .json::<LocalAICompletionResponse>()
-        .await
-        .unwrap()
-        .choices;
+    let response_choices = res.json::<OpenAIChatResponse>().await.unwrap().choices;
 
-    Ok(response_choices[0].text.clone())
+    Ok(response_choices[0].message.content.clone())
 }
 
 async fn fetch_config_setting(
