@@ -2,15 +2,21 @@
 authors = ["Michael Nesibtt <michael.nesbitt111@gmail.com>"]
 edition = "2018"
 name = "ponyboy_bot"
-version = "0.2.4"
+version = "0.2.5"
 
 [dependencies]
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.2"
-reqwest = {version = "0.11.23", features = ["json"]}
+reqwest = { version = "0.11.23", features = ["json"] }
 serde = "1.0.195"
-serenity = {version = "0.12.0", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"]}
-tokio = {version = "1.35.1", features = ["macros", "rt-multi-thread"]}
+serenity = { version = "0.12.0", default-features = false, features = [
+    "client",
+    "gateway",
+    "rustls_backend",
+    "model",
+    "cache",
+] }
+tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread"] }
 toml = "0.8.8"
 warp = "0.3.6"
