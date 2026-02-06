@@ -1,5 +1,5 @@
 # 1. This tells docker to use the Rust official image
-FROM rust:1.85
+FROM rust:1.88
 
 # 2. Copy the files in your machine to the Docker image
 WORKDIR /app
