@@ -19,10 +19,10 @@ pub(crate) async fn send_llm_generated_message(ctx: &Context, incoming_message: 
         .unwrap();
     message_list.reverse();
     let message_history = convert_message_list_to_history(bot_user.id.into(), message_list);
-    let trimmed_message = incoming_message.content.replace(
-        format!("<@{}>", bot_user.id).as_str(),
-        bot_user.name.as_str(),
-    );
+    let trimmed_message = incoming_message
+        .content
+        .replace(&format!("<@{}>", bot_user.id), &bot_user.name);
+
     match ai::generate_ai_bot_response(
         bot_user.name.clone(),
         incoming_message.author.name.clone(),
@@ -32,42 +32,14 @@ pub(crate) async fn send_llm_generated_message(ctx: &Context, incoming_message: 
     .await
     {
         Ok(generated_message) => {
-            // If the generated message is too long, break it into multiple messages
-            if generated_message.chars().count() > 2000 {
-                let mut current_chunk: String = String::new();
-                let mut message_chars = generated_message.chars();
-                while let Some(message_char) = message_chars.next() {
-                    current_chunk.push(message_char);
-                    if current_chunk.chars().count() > 1999 {
-                        if let Err(why) = incoming_message
-                            .channel_id
-                            .say(&ctx.http, &current_chunk)
-                            .await
-                        {
-                            println!("Error sending message: {why:?}");
-                        }
-                        current_chunk.clear();
-                    }
-                }
-                if current_chunk.len() > 0 {
-                    if let Err(why) = incoming_message
-                        .channel_id
-                        .say(&ctx.http, &current_chunk)
-                        .await
-                    {
-                        println!("Error sending message: {why:?}");
-                    }
-                }
-            } else {
-                if let Err(why) = incoming_message
-                    .channel_id
-                    .say(&ctx.http, &generated_message)
-                    .await
-                {
+            let chars: Vec<char> = generated_message.chars().collect();
+            for chunk in chars.chunks(2000) {
+                let chunk_str: String = chunk.iter().collect();
+                if let Err(why) = incoming_message.channel_id.say(&ctx.http, &chunk_str).await {
                     println!("Error sending message: {why:?}");
                 }
             }
-            println!("{}: {}", "generated_message", "message");
+            println!("generated_message: {}", generated_message);
         }
         Err(error) => {
             println!("Unable to generate message response: {}", error);
@@ -81,82 +53,72 @@ pub(crate) async fn send_llm_generated_message(ctx: &Context, incoming_message: 
 pub(crate) async fn process_keyword_actions(
     ctx: &Context,
     incoming_message: Message,
-    keyword_actions: &Vec<keyword_action::KeywordAction>,
-    file_base_dir: &String,
+    keyword_actions: &[keyword_action::KeywordAction],
+    file_base_dir: &str,
 ) {
     for keyword_action in keyword_actions {
         let mut message_matches_action = false;
 
-        // Check if a specific user is mentioned in the message
-        let triggers = keyword_action.triggers.as_ref().unwrap();
-        if triggers.contains(&"mention".to_string()) {
-            let mentioned_user = keyword_action.mentioned_user.as_ref().unwrap();
-            let user_id = UserId::new(*mentioned_user);
-            if incoming_message.mentions_user_id(user_id) {
+        let triggers = keyword_action
+            .triggers
+            .as_ref()
+            .expect("keyword_action missing triggers");
+        if triggers.iter().any(|t| t == "mention") {
+            let mentioned_user = keyword_action
+                .mentioned_user
+                .as_ref()
+                .expect("keyword_action missing mentioned_user");
+            if incoming_message.mentions_user_id(UserId::new(*mentioned_user)) {
                 message_matches_action = true;
             }
         }
 
-        // Check if a keyword is used in the message
-        let regex_keyword_group = keyword_action
+        let keywords = keyword_action
             .keywords
             .as_ref()
-            .unwrap()
-            .join(r"( |[\?\.',]|$)|(^| )");
+            .expect("keyword_action missing keywords");
+        let regex_keyword_group = keywords.join(r"( |[\?\.',]|$)|(^| )");
         let re =
-            Regex::new(format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)").as_str()).unwrap();
-        if re.is_match(incoming_message.content.as_str()) {
+            Regex::new(&format!("(^| ){regex_keyword_group}( |[\\?\\.',]|$)")).unwrap();
+        if re.is_match(&incoming_message.content) {
             message_matches_action = true;
         }
+
         if message_matches_action {
-            // Select a random action from the list of actions associated with the trigger. If only one action is specified, it is selected
             let random_action = keyword_action
                 .actions
                 .as_ref()
-                .unwrap()
+                .expect("keyword_action missing actions")
                 .choose(&mut rand::thread_rng())
-                .unwrap();
+                .expect("keyword_action has empty actions list");
+            let action_name = keyword_action
+                .name
+                .as_deref()
+                .expect("keyword_action missing name");
+
             if let Some(emotes) = random_action.emotes.as_ref() {
-                process_emotes_action(
-                    &ctx,
-                    &incoming_message,
-                    &emotes,
-                    keyword_action.name.as_ref().unwrap(),
-                )
-                .await
+                process_emotes_action(ctx, &incoming_message, emotes, action_name).await;
             }
             let mut sending_embed_message = false;
             if let Some(file) = random_action.file.as_ref() {
                 sending_embed_message = true;
                 process_file_action(
-                    &ctx,
+                    ctx,
                     &incoming_message,
                     &random_action.message,
-                    &file,
-                    keyword_action.name.as_ref().unwrap(),
-                    &file_base_dir,
+                    file,
+                    action_name,
+                    file_base_dir,
                 )
-                .await
+                .await;
             }
             if let Some(message) = random_action.message.as_ref() {
                 if !sending_embed_message {
-                    process_message_action(
-                        &ctx,
-                        &incoming_message,
-                        message,
-                        keyword_action.name.as_ref().unwrap(),
-                    )
-                    .await
+                    process_message_action(ctx, &incoming_message, message, action_name).await;
                 }
             }
             if let Some(message) = random_action.mention.as_ref() {
-                process_mention_action(
-                    ctx,
-                    &incoming_message,
-                    message,
-                    keyword_action.name.as_ref().unwrap(),
-                )
-                .await
+                process_mention_action(ctx, &incoming_message, message, action_name).await;
             }
         }
     }
@@ -166,31 +128,24 @@ fn convert_message_list_to_history(
     bot_id: u64,
     message_list: Vec<Message>,
 ) -> Vec<(String, String, String)> {
-    let mut message_string_list = Vec::new();
-
-    for message in message_list {
-        if message.content != "" {
-            message_string_list.push((
-                message.timestamp.to_rfc3339().unwrap(),
-                message.author.name,
-                format!(
-                    "{}",
-                    message
-                        .content
-                        .replace(format!("<@{}>", bot_id).as_str(), "ponyboy",)
-                ),
-            ));
-        }
-    }
-
-    return message_string_list;
+    message_list
+        .into_iter()
+        .filter(|m| !m.content.is_empty())
+        .map(|m| {
+            (
+                m.timestamp.to_rfc3339().unwrap(),
+                m.author.name,
+                m.content.replace(&format!("<@{}>", bot_id), "ponyboy"),
+            )
+        })
+        .collect()
 }
 
 async fn process_emotes_action(
     ctx: &Context,
     incoming_message: &Message,
-    emotes: &Vec<String>,
-    action_name: &String,
+    emotes: &[String],
+    action_name: &str,
 ) {
     for emote in emotes {
         if let Ok(emote_id) = emote.parse::<u64>() {
@@ -198,91 +153,87 @@ async fn process_emotes_action(
             let emoji = incoming_message
                 .guild_id
                 .unwrap()
-                .emoji(&ctx, emoji_id)
+                .emoji(ctx, emoji_id)
                 .await
                 .unwrap();
-            if let Err(why) = incoming_message.react(&ctx, emoji).await {
+            if let Err(why) = incoming_message.react(ctx, emoji).await {
                 println!("Error sending message: {why:?}");
             }
-        } else {
-            if let Err(why) = incoming_message
-                .react(&ctx, ReactionType::Unicode(emote.clone()))
-                .await
-            {
-                println!("Error sending message: {why:?}");
-            }
+        } else if let Err(why) = incoming_message
+            .react(ctx, ReactionType::Unicode(emote.clone()))
+            .await
+        {
+            println!("Error sending message: {why:?}");
         }
     }
-    println!("{}: {} - {:#?}", action_name, "emote", emotes);
+    println!("{}: emote - {:#?}", action_name, emotes);
 }
 
 async fn process_file_action(
     ctx: &Context,
     incoming_message: &Message,
     action_message: &Option<String>,
-    file: &String,
-    action_name: &String,
-    file_base_dir: &String,
+    file: &str,
+    action_name: &str,
+    file_base_dir: &str,
 ) {
-    let paths = [
-        CreateAttachment::path(Path::new(file_base_dir).join("file_embeds").join(file))
-            .await
-            .unwrap(),
-    ];
+    let attachment = match CreateAttachment::path(
+        Path::new(file_base_dir).join("file_embeds").join(file),
+    )
+    .await
+    {
+        Ok(a) => a,
+        Err(why) => {
+            println!("Error creating attachment for {}: {why:?}", file);
+            return;
+        }
+    };
 
-    let builder;
-    let message: String;
-    let mut add_message = false;
-    match action_message {
-        Some(config_message) => {
-            message = config_message.clone();
-            add_message = true;
-        }
-        None => {
-            message = file.clone();
-        }
+    let mut builder = CreateMessage::new();
+    if let Some(msg) = action_message {
+        builder = builder.content(msg.as_str());
     }
-    if add_message {
-        builder = CreateMessage::new().content(&message);
-    } else {
-        builder = CreateMessage::new();
-    }
+
     if let Err(why) = incoming_message
         .channel_id
-        .send_files(&ctx.http, paths, builder)
+        .send_files(&ctx.http, [attachment], builder)
         .await
     {
         println!("Error sending message: {why:?}");
     }
-    println!("{}: {} - {}", action_name, "file_embed", message);
+    println!(
+        "{}: file_embed - {}",
+        action_name,
+        action_message.as_deref().unwrap_or(file)
+    );
 }
 
 async fn process_message_action(
     ctx: &Context,
     incoming_message: &Message,
-    message: &String,
-    action_name: &String,
+    message: &str,
+    action_name: &str,
 ) {
     if let Err(why) = incoming_message.channel_id.say(&ctx.http, message).await {
         println!("Error sending message: {why:?}");
     }
-    println!("{}: {} - {}", action_name, "message", message);
+    println!("{}: message - {}", action_name, message);
 }
 
 async fn process_mention_action(
     ctx: &Context,
     incoming_message: &Message,
-    message: &String,
-    action_name: &String,
+    message: &str,
+    action_name: &str,
 ) {
     let mentioned_user = incoming_message.author.mention();
-    let formatted_messaage = message.replace("@mention", format!("{}", mentioned_user).as_str());
+    let formatted_message = message.replace("@mention", &format!("{}", mentioned_user));
     if let Err(why) = incoming_message
         .channel_id
-        .say(&ctx.http, formatted_messaage)
+        .say(&ctx.http, &formatted_message)
         .await
     {
         println!("Error sending message: {why:?}");
     }
-    println!("{}: {} - {}", action_name, "message", message);
+    println!("{}: message - {}", action_name, message);
 }
