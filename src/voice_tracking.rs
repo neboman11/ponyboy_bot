@@ -30,6 +30,17 @@ pub fn load_log_channel_id() -> Option<ChannelId> {
         .map(ChannelId::new)
 }
 
+fn format_duration(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    match (h, m) {
+        (0, 0) => format!("{}s", s),
+        (0, _) => format!("{}m {}s", m, s),
+        _ => format!("{}h {}m {}s", h, m, s),
+    }
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -164,8 +175,9 @@ pub async fn handle_voice_state_update(
             } => {
                 let ended_at = unix_now();
                 let msg = format!(
-                    "Call ended in **{}** (duration: {}s)",
-                    channel_name, duration_secs
+                    "Call ended in **{}** (duration: {})",
+                    channel_name,
+                    format_duration(duration_secs)
                 );
                 println!("voice_tracking: {}", msg);
                 if let Some(ch) = log_channel_id {
