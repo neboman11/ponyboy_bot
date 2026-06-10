@@ -69,7 +69,8 @@ async fn main() {
     let file_base_dir =
         env::var("FILE_BASE_DIR").expect("Expected file base dir to be set in the environment");
 
-    let active_calls = voice_tracking::ActiveCalls::default();
+    let initial_calls = voice_tracking::restore_active_calls(&file_base_dir).await;
+    let active_calls = voice_tracking::ActiveCalls::new(tokio::sync::Mutex::new(initial_calls));
     let tracked_channel_ids = voice_tracking::load_tracked_channel_ids();
     let log_channel_id = voice_tracking::load_log_channel_id();
 

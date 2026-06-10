@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use serenity::model::id::ChannelId;
 use serenity::model::voice::VoiceState;
@@ -8,7 +7,8 @@ use serenity::prelude::Context;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
-pub type ActiveCalls = Arc<Mutex<HashMap<ChannelId, Instant>>>;
+// Maps channel ID to Unix timestamp of call start.
+pub type ActiveCalls = Arc<Mutex<HashMap<ChannelId, u64>>>;
 
 pub fn load_tracked_channel_ids() -> Vec<ChannelId> {
     let raw = match std::env::var("TRACKED_VOICE_CHANNEL_IDS") {
@@ -46,6 +46,41 @@ fn unix_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+pub async fn restore_active_calls(file_base_dir: &str) -> HashMap<ChannelId, u64> {
+    let path = std::path::Path::new(file_base_dir).join("active_calls.json");
+    let json = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    match serde_json::from_str::<HashMap<String, u64>>(&json) {
+        Ok(map) => {
+            let calls: HashMap<ChannelId, u64> = map
+                .into_iter()
+                .filter_map(|(k, v)| k.parse::<u64>().ok().map(|id| (ChannelId::new(id), v)))
+                .collect();
+            println!("voice_tracking: restored {} active call(s) from disk", calls.len());
+            calls
+        }
+        Err(e) => {
+            println!("voice_tracking: failed to parse active_calls.json: {e}");
+            HashMap::new()
+        }
+    }
+}
+
+async fn persist_active_calls(file_base_dir: &str, calls: &HashMap<ChannelId, u64>) {
+    let path = std::path::Path::new(file_base_dir).join("active_calls.json");
+    let map: HashMap<String, u64> = calls.iter().map(|(k, v)| (k.get().to_string(), *v)).collect();
+    match serde_json::to_string(&map) {
+        Ok(json) => {
+            if let Err(e) = tokio::fs::write(&path, json).await {
+                println!("voice_tracking: failed to save active_calls.json: {e}");
+            }
+        }
+        Err(e) => println!("voice_tracking: failed to serialize active_calls: {e}"),
+    }
 }
 
 async fn append_call_record(
@@ -132,13 +167,12 @@ pub async fn handle_voice_state_update(
                 .unwrap_or_else(|| channel_id.to_string());
 
             if count >= 2 && !calls.contains_key(&channel_id) {
-                calls.insert(channel_id, Instant::now());
+                calls.insert(channel_id, unix_now());
                 evts.push(CallEvent::Started { channel_name, count });
             } else if count <= 1 {
-                if let Some(start) = calls.remove(&channel_id) {
-                    let duration_secs = start.elapsed().as_secs();
+                if let Some(started_at) = calls.remove(&channel_id) {
                     let ended_at = unix_now();
-                    let started_at = ended_at.saturating_sub(duration_secs);
+                    let duration_secs = ended_at.saturating_sub(started_at);
                     evts.push(CallEvent::Ended {
                         channel_id,
                         channel_name,
@@ -153,9 +187,12 @@ pub async fn handle_voice_state_update(
         // guild (dashmap read lock) drops here
     };
 
+    let calls_snapshot = calls.clone();
     drop(calls); // release mutex before any await
 
     // Phase 2: async I/O with no locks held.
+    persist_active_calls(file_base_dir, &calls_snapshot).await;
+
     for event in events {
         match event {
             CallEvent::Started { channel_name, count } => {

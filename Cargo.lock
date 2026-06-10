@@ -1002,13 +1002,14 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "ponyboy_bot"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "futures",
  "rand",
  "regex",
  "reqwest",
  "serde",
+ "serde_json",
  "serenity",
  "tokio",
  "toml",
