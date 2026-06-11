@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serenity::http::Http;
 use serenity::model::id::ChannelId;
 use serenity::model::voice::VoiceState;
 use serenity::prelude::Context;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 // Maps channel ID to Unix timestamp of call start.
 pub type ActiveCalls = Arc<Mutex<HashMap<ChannelId, u64>>>;
+// Maps channel ID to the grace-period task waiting to officially end the call.
+pub type PendingEnds = Arc<Mutex<HashMap<ChannelId, JoinHandle<()>>>>;
 
 pub fn load_tracked_channel_ids() -> Vec<ChannelId> {
     let raw = match std::env::var("TRACKED_VOICE_CHANNEL_IDS") {
@@ -28,6 +32,13 @@ pub fn load_log_channel_id() -> Option<ChannelId> {
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .map(ChannelId::new)
+}
+
+pub fn load_grace_period_secs() -> u64 {
+    std::env::var("CALL_GRACE_PERIOD_SECS")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
 }
 
 fn format_duration(secs: u64) -> String {
@@ -114,26 +125,68 @@ async fn append_call_record(
     }
 }
 
+// Spawned as a task when a call drops to ≤1 participant. Sleeps for the grace
+// period, then officially ends the call. Aborted if someone rejoins in time.
+async fn end_call_task(
+    active_calls: ActiveCalls,
+    pending_ends: PendingEnds,
+    channel_id: ChannelId,
+    channel_name: String,
+    log_channel_id: Option<ChannelId>,
+    http: Arc<Http>,
+    file_base_dir: String,
+    grace_secs: u64,
+) {
+    tokio::time::sleep(std::time::Duration::from_secs(grace_secs)).await;
+
+    // Lock ordering: active_calls → pending_ends (matches event handler).
+    let started_at = {
+        let mut calls = active_calls.lock().await;
+        calls.remove(&channel_id)
+    };
+    {
+        let mut pending = pending_ends.lock().await;
+        pending.remove(&channel_id);
+    }
+
+    let Some(started_at) = started_at else { return };
+
+    let ended_at = unix_now();
+    let duration_secs = ended_at.saturating_sub(started_at);
+
+    {
+        let calls = active_calls.lock().await;
+        persist_active_calls(&file_base_dir, &calls).await;
+    }
+
+    let msg = format!(
+        "Call ended in **{}** (duration: {})",
+        channel_name,
+        format_duration(duration_secs)
+    );
+    println!("voice_tracking: {}", msg);
+    if let Some(ch) = log_channel_id {
+        if let Err(e) = ch.say(&http, &msg).await {
+            println!("voice_tracking: failed to send log message: {e}");
+        }
+    }
+    append_call_record(&file_base_dir, started_at, ended_at, duration_secs, channel_id, &channel_name).await;
+}
+
 enum CallEvent {
-    Started {
-        channel_name: String,
-        count: usize,
-    },
-    Ended {
-        channel_id: ChannelId,
-        channel_name: String,
-        started_at: u64,
-        duration_secs: u64,
-    },
+    Started { channel_name: String, count: usize },
+    Resumed { channel_name: String },
 }
 
 pub async fn handle_voice_state_update(
     ctx: &Context,
     new: VoiceState,
     active_calls: &ActiveCalls,
+    pending_ends: &PendingEnds,
     tracked_channel_ids: &[ChannelId],
     log_channel_id: Option<ChannelId>,
     file_base_dir: &str,
+    grace_period_secs: u64,
 ) {
     let guild_id = match new.guild_id {
         Some(id) => id,
@@ -141,9 +194,9 @@ pub async fn handle_voice_state_update(
     };
 
     // Phase 1: collect state under locks — no awaits while locks are held.
-    // The tokio mutex is awaited first (before the dashmap lock), so yielding
-    // during contention cannot deadlock against serenity's cache writes.
+    // Lock ordering: active_calls → pending_ends → dashmap guild read lock.
     let mut calls = active_calls.lock().await;
+    let mut pending = pending_ends.lock().await;
 
     let events: Vec<CallEvent> = {
         let guild = match ctx.cache.guild(guild_id) {
@@ -166,20 +219,31 @@ pub async fn handle_voice_state_update(
                 .map(|c| c.name.clone())
                 .unwrap_or_else(|| channel_id.to_string());
 
-            if count >= 2 && !calls.contains_key(&channel_id) {
-                calls.insert(channel_id, unix_now());
-                evts.push(CallEvent::Started { channel_name, count });
-            } else if count <= 1 {
-                if let Some(started_at) = calls.remove(&channel_id) {
-                    let ended_at = unix_now();
-                    let duration_secs = ended_at.saturating_sub(started_at);
-                    evts.push(CallEvent::Ended {
-                        channel_id,
-                        channel_name,
-                        started_at,
-                        duration_secs,
-                    });
+            if count >= 2 {
+                if calls.contains_key(&channel_id) {
+                    // Ongoing or in grace period — cancel any pending end.
+                    if let Some(handle) = pending.remove(&channel_id) {
+                        handle.abort();
+                        evts.push(CallEvent::Resumed { channel_name });
+                    }
+                } else {
+                    // New call.
+                    calls.insert(channel_id, unix_now());
+                    evts.push(CallEvent::Started { channel_name, count });
                 }
+            } else if count <= 1 && calls.contains_key(&channel_id) && !pending.contains_key(&channel_id) {
+                // Start grace period — channel stays in active_calls until task fires.
+                let handle = tokio::spawn(end_call_task(
+                    active_calls.clone(),
+                    pending_ends.clone(),
+                    channel_id,
+                    channel_name,
+                    log_channel_id,
+                    ctx.http.clone(),
+                    file_base_dir.to_string(),
+                    grace_period_secs,
+                ));
+                pending.insert(channel_id, handle);
             }
         }
 
@@ -188,9 +252,11 @@ pub async fn handle_voice_state_update(
     };
 
     let calls_snapshot = calls.clone();
-    drop(calls); // release mutex before any await
+    drop(pending);
+    drop(calls);
 
     // Phase 2: async I/O with no locks held.
+    // End-of-call work is handled by end_call_task; only persist start/resume here.
     persist_active_calls(file_base_dir, &calls_snapshot).await;
 
     for event in events {
@@ -204,33 +270,8 @@ pub async fn handle_voice_state_update(
                     }
                 }
             }
-            CallEvent::Ended {
-                channel_id,
-                channel_name,
-                started_at,
-                duration_secs,
-            } => {
-                let ended_at = unix_now();
-                let msg = format!(
-                    "Call ended in **{}** (duration: {})",
-                    channel_name,
-                    format_duration(duration_secs)
-                );
-                println!("voice_tracking: {}", msg);
-                if let Some(ch) = log_channel_id {
-                    if let Err(e) = ch.say(&ctx.http, &msg).await {
-                        println!("voice_tracking: failed to send log message: {e}");
-                    }
-                }
-                append_call_record(
-                    file_base_dir,
-                    started_at,
-                    ended_at,
-                    duration_secs,
-                    channel_id,
-                    &channel_name,
-                )
-                .await;
+            CallEvent::Resumed { channel_name } => {
+                println!("voice_tracking: call in {} resumed within grace period", channel_name);
             }
         }
     }

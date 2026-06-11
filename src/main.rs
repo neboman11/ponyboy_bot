@@ -17,8 +17,10 @@ struct Handler {
     keyword_actions: Vec<keyword_action::KeywordAction>,
     file_base_dir: String,
     active_calls: voice_tracking::ActiveCalls,
+    pending_ends: voice_tracking::PendingEnds,
     tracked_channel_ids: Vec<ChannelId>,
     log_channel_id: Option<ChannelId>,
+    grace_period_secs: u64,
 }
 
 #[async_trait]
@@ -44,9 +46,11 @@ impl EventHandler for Handler {
             &ctx,
             new,
             &self.active_calls,
+            &self.pending_ends,
             &self.tracked_channel_ids,
             self.log_channel_id,
             &self.file_base_dir,
+            self.grace_period_secs,
         )
         .await;
     }
@@ -71,16 +75,20 @@ async fn main() {
 
     let initial_calls = voice_tracking::restore_active_calls(&file_base_dir).await;
     let active_calls = voice_tracking::ActiveCalls::new(tokio::sync::Mutex::new(initial_calls));
+    let pending_ends = voice_tracking::PendingEnds::default();
     let tracked_channel_ids = voice_tracking::load_tracked_channel_ids();
     let log_channel_id = voice_tracking::load_log_channel_id();
+    let grace_period_secs = voice_tracking::load_grace_period_secs();
 
     let mut discord_client = Client::builder(&discord_token, intents)
         .event_handler(Handler {
             file_base_dir,
             keyword_actions,
             active_calls,
+            pending_ends,
             tracked_channel_ids,
             log_channel_id,
+            grace_period_secs,
         })
         .await
         .expect("Err creating client");
