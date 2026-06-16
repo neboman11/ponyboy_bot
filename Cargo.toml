@@ -14,10 +14,10 @@ serde_json = "1"
 serenity = { version = "0.12", default-features = false, features = [
     "client",
     "gateway",
-    "rustls_backend",
+    "native_tls_backend",
     "model",
     "cache",
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "time"] }
 toml = "0.8"
-warp = "0.3"
+warp = { version = "0.4", features = ["server"] }
