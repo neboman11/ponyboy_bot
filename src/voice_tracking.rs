@@ -125,7 +125,7 @@ async fn append_call_record(
     }
 }
 
-// Spawned as a task when a call drops to ≤1 participant. Sleeps for the grace
+// Spawned as a task when a call drops to 0 participants. Sleeps for the grace
 // period, then officially ends the call. Aborted if someone rejoins in time.
 async fn end_call_task(
     active_calls: ActiveCalls,
@@ -231,7 +231,7 @@ pub async fn handle_voice_state_update(
                     calls.insert(channel_id, unix_now());
                     evts.push(CallEvent::Started { channel_name, count });
                 }
-            } else if count <= 1 && calls.contains_key(&channel_id) && !pending.contains_key(&channel_id) {
+            } else if count == 0 && calls.contains_key(&channel_id) && !pending.contains_key(&channel_id) {
                 // Start grace period — channel stays in active_calls until task fires.
                 let handle = tokio::spawn(end_call_task(
                     active_calls.clone(),
